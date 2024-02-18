@@ -8,7 +8,7 @@ import numpy as np
 import time
 from html import unescape
 import re
-from annotate_realtime import detect_objects_and_extract_text, reset
+from Application.annotate_realtime import detect_objects_and_extract_text, reset
 
 api_key = "AIzaSyAj5is27Ui1bJ5CMSCdGEcus41LIiZ5Zy8"
 latitude, longitude = None, None
