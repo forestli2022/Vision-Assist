@@ -185,6 +185,6 @@ def html_to_plaintext(html_text):
 
 
 if __name__ == '__main__':
-    socketio.run(port=int(os.environ.get("PORT", 8080)),host='0.0.0.0',debug=True)
+    socketio.run(port=int(os.environ.get("PORT", 8080)),host='0.0.0.0',debug=True, allow_unsafe_werkzeug=True)
 
 # 51.4818048 -0.1769472
