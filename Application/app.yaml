@@ -1,4 +1,4 @@
-runtime: python
+runtime: python310
 env: flex
 
 runtime_config:
