@@ -7,4 +7,6 @@ RUN pip install -r requirements.txt
 
 COPY . .
 
+EXPOSE 8080
+
 CMD ["gunicorn", "-k", "gevent", "-b", "0.0.0.0:$PORT", "main:app"]
