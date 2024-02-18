@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Microphone Toggle Example</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+</head>
+<body>
+    <div id="title-container">
+        <h1 id="title-text">Vision Assist</h1>
+    </div>
+    <div id="button-container">
+        <button id="animatedButton" onclick="toggleAnimation()">
+            <div id="circle"></div>
+            <img src="/static/microphone.png" height="512" alt="microphone">
+        </button>
+    </div>
+
+     <audio id="audioPlayer" controls style="display: none;"></audio>
+
+    <script>
+        // audio recording
+        const recognition = new webkitSpeechRecognition(); // Use the Webkit prefix for some browsers
+        recognition.continuous = true;
+        recognition.lang = 'en-US';
+        const audioPlayer = document.getElementById('audioPlayer');
+        var recognizing = false
+
+        function playAudioFromPath(path) {
+            audioPlayer.src = path; // Replace with the actual path
+            audioPlayer.load(); // Load the new source
+            audioPlayer.play(); // Start playing the audio
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const toggleButton = document.getElementById('animatedButton');
+            const socket = io();
+
+            let isMicrophoneOn = false;
+            let recognizedText = "";
+
+            toggleButton.addEventListener('click', () => {
+                isMicrophoneOn = !isMicrophoneOn;
+
+                if (isMicrophoneOn) {
+                    // Start speech recognition when microphone is toggled on
+                    recognition.start();
+                    recognizing = true;
+                    playAudioFromPath("/static/on.wav")
+                } else {
+                    // Stop speech recognition when microphone is toggled off
+                    recognition.stop();
+                    recognizing = false;
+                    playAudioFromPath("/static/off.wav")
+                }
+            });
+
+            recognition.onresult = (event) => {
+                const last = event.results.length - 1;
+                const recognizedText = event.results[last][0].transcript;
+                console.log('Recognized Text:', recognizedText);
+                // Send the recorded text to the server
+                socket.emit('send_text', recognizedText);
+            };
+
+            recognition.onerror = (event) => {
+                console.error('Speech recognition error:', event.error);
+            };
+
+            socket.on('processed_text', (data) => {
+                console.log('Server response:', data);
+            });
+
+            // text to speech
+            socket.on('speak', (textToSpeak) => {
+                if(window.speechSynthesis.speaking || recognizing) return;
+
+                const utterance = new SpeechSynthesisUtterance(textToSpeak);
+                utterance.rate = 1.25
+                utterance.voice = window.speechSynthesis.getVoices().find(voice => voice.gender === "female");
+                window.speechSynthesis.speak(utterance);
+                utterance.onend = () => {
+                    socket.emit('speaker_available')
+                    console.log("speaker_available")
+                };
+            });
+
+            // scan
+            let stream;
+            let videoElement;
+
+            socket.on('activate_scan', () => {
+                navigator.mediaDevices.getUserMedia({ video: true })
+                .then((newStream) => {
+                    stream = newStream;
+                    videoElement = document.createElement('video');
+                    videoElement.srcObject = stream;
+                    socket.emit("scan_activated")
+                })
+                .catch((error) => {
+                    console.error('Error getting user media:', error);
+                });
+            });
+
+            socket.on('request_scan', () => {
+                if(stream){
+                    captureFrame()
+                }
+            });
+
+            socket.on('deactivate_scan', () => {
+                stopVideoStream()
+            })
+
+            function captureFrame() {
+                const track = stream.getVideoTracks()[0];
+                const imageCapture = new ImageCapture(track);
+
+                imageCapture.grabFrame()
+                    .then(frame => frameToBase64(frame))
+                    .then(frameData => {
+                        if (frameData.trim() !== '') {
+                            socket.emit('video_frame', frameData);
+                        } else {
+                            console.error('Empty frameData.');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error capturing frame:', error);
+                    });
+            }
+
+            function stopVideoStream() {
+                // Stop the video stream and remove the video element
+                if (stream) {
+                    const tracks = stream.getTracks();
+                    tracks.forEach(track => track.stop());
+                    videoElement.srcObject = null;
+                    stream = null;
+                }
+            }
+
+            function frameToBase64(frame) {
+                return new Promise(resolve => {
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+
+                    // Set canvas dimensions to match the frame
+                    canvas.width = frame.width;
+                    canvas.height = frame.height;
+
+                    // Draw the frame onto the canvas
+                    context.drawImage(frame, 0, 0, frame.width, frame.height);
+
+                    // Convert the canvas content to base64
+                    const base64Data = canvas.toDataURL('image/png').split(',')[1];
+                    resolve(base64Data);
+                });
+            }
+
+
+            // navigation
+            let watcher;
+            socket.on('activate_navigation', () => {
+                console.log("navigation activated");
+                watcher = navigator.geolocation.watchPosition(successCallback, errorCallback, options);
+            });
+
+            socket.on('deactivate_navigation', () => {
+                console.log("navigation deactivated");
+                navigator.geolocation.clearWatch(watcher);
+            });
+
+            function successCallback(position) {
+                const {accuracy, latitude, longitude, altitude, heading, speed} = position.coords;
+                sendDataToPython(latitude, longitude);
+            }
+
+            function errorCallback(error) {
+            // Handle errors if needed
+            }
+
+            var options = {
+                enableHighAccuracy: false,
+                timeout: 5000,
+            }
+
+            function sendDataToPython(latitude, longitude) {
+                const data = {
+                    "latitude": latitude,
+                    "longitude": longitude
+                };
+
+                // Convert data to JSON format
+                const jsonData = JSON.stringify(data);
+
+                socket.emit('update_location', jsonData)
+            }
+        });
+
+
+        // button animation
+        var isAnimating = false;
+
+        function toggleAnimation() {
+            var button = document.getElementById('animatedButton');
+            var circle = document.getElementById('circle');
+            isAnimating = !isAnimating;
+            if (isAnimating) {
+                button.classList.add('extravagant-color-change');
+                circle.style.animation = 'ripple 0.6s ease-out';
+            } else {
+                button.classList.remove('extravagant-color-change');
+                circle.style.animation = 'none';
+                circle.offsetHeight; /* Trigger reflow to restart the animation */
+                circle.style.animation = 'ripple 0.6s ease-out';
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+runtime: python310
+entrypoint: gunicorn -b :$PORT main:app
+
+runtime_config:
+  python_version: 3.10
+
+env_variables:
+  FLASK_ENV: production
