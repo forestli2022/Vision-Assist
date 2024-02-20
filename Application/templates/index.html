@@ -94,11 +94,14 @@
             let videoElement;
 
             socket.on('activate_scan', () => {
-                navigator.mediaDevices.getUserMedia({ video: true })
+                navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false })
                 .then((newStream) => {
                     stream = newStream;
                     videoElement = document.createElement('video');
                     videoElement.srcObject = stream;
+                    videoElement.autoplay = true;
+                    videoElement.playsInline = true;
+                    videoElement.muted = true;
                     socket.emit("scan_activated")
                 })
                 .catch((error) => {
@@ -130,6 +133,7 @@
                         }
                     })
                     .catch(error => {
+                        socket.emit('speaker_available');
                         console.error('Error capturing frame:', error);
                     });
             }

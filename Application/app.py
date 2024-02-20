@@ -9,10 +9,11 @@ import time
 from html import unescape
 import re
 from Application.annotate_realtime import detect_objects_and_extract_text, reset
+import os
 
 api_key = "AIzaSyAj5is27Ui1bJ5CMSCdGEcus41LIiZ5Zy8"
 latitude, longitude = None, None
-destination_lat, destination_lng = None, None
+destination_location = None
 last_instruction = ""
 speaker_available = True
 instruction_to_be_said = None
@@ -57,21 +58,23 @@ def receive_text(text):
     if text == "scan" or text == "SC":
         speak("scan activated")
         print(f"Availability: {speaker_available}")
+        speaker_available = True
         emit("activate_scan")  # start the scan loop: request -> client response -> process -> request
     elif text == "quit scan" or text == "quit SC":
         print(f"Availability: {speaker_available}")
         speak("scan deactivated")
+        speaker_available = True
         emit("deactivate_scan")
     elif text[0:11] == "navigate to":
         address = text[11:]
-        global destination_lat, destination_lng
-        destination_lat, destination_lng, formatted_address = geocode(address)
-        if destination_lat is None or destination_lng is None:
-            speak("no address found")
-        speak(f"navigating to {formatted_address}")
+        global destination_location
+        destination_location = address
+        speak(f"navigating to {destination_location}")
+        speaker_available = True
         emit("activate_navigation")
     elif text == "quit navigation":
         speak("navigation deactivated")
+        speaker_available = True
         emit("deactivate_navigation")
 
 
@@ -104,13 +107,14 @@ def update_loc(jsonData):
     data = json.loads(jsonData)
     latitude = data['latitude']
     longitude = data['longitude']
-    get_prompt(latitude, longitude, destination_lat, destination_lng)
+    get_prompt(latitude, longitude, destination_location)
     return "Location updated successfully!"
 
 
-def get_prompt(start_lat, start_long, dest_lat, dest_long):
-    I, D, S = get_walking_directions(api_key, start_lat, start_long, dest_lat, dest_long)
+def get_prompt(start_lat, start_long, dest_location):
+    I, D, S = get_walking_directions(api_key, start_lat, start_long, dest_location)
     # closest_instruction, coords = find_closest_instruction(latitude, longitude, S, I)
+    print(I)
     closest_instruction = I[0]
     closest_dist = D[0]
     global last_instruction
@@ -129,14 +133,14 @@ def get_prompt(start_lat, start_long, dest_lat, dest_long):
         instruction_to_be_said = instruction_text
 
 
-def get_walking_directions(api_key, origin_lat, origin_lng, destination_lat, destination_lng):
+def get_walking_directions(api_key, origin_lat, origin_lng, dest_location):
     origin = f"{origin_lat},{origin_lng}"
-    destination = f"{destination_lat},{destination_lng}"
+    # destination = f"{destination_lat},{destination_lng}"
     instructions = []
     start_locations = []
     distances = []
 
-    url = f"https://maps.googleapis.com/maps/api/directions/json?origin={origin}&destination={destination}&mode=walking&key={api_key}"
+    url = f"https://maps.googleapis.com/maps/api/directions/json?origin={origin}&destination={dest_location}&mode=walking&key={api_key}"
     response = requests.get(url)
     data = response.json()
 
@@ -185,6 +189,6 @@ def html_to_plaintext(html_text):
 
 
 if __name__ == '__main__':
-    socketio.run(port=int(os.environ.get("PORT", 8080)),host='0.0.0.0',debug=True, allow_unsafe_werkzeug=True)
+    socketio.run(app, debug=True, host='0.0.0.0', port=os.environ.get('PORT', 5000))
 
 # 51.4818048 -0.1769472
