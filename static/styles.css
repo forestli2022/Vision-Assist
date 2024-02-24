@@ -14,6 +14,7 @@ body {
     justify-content: center;
     height: 100vh; /* Set the height of the body to the viewport height */
     margin: 0; /* Remove default body margin */
+    text-align: center;
 }
 
 #title-text {
@@ -21,6 +22,10 @@ body {
   margin-top: -150px;
   font-family: 'Arial', sans-serif; /* Change to the desired font */
   font-size: 3em; /* Adjust the font size as needed */
+}
+
+#generated-text {
+
 }
 
 #animatedButton {

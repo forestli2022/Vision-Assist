@@ -13,7 +13,7 @@ WORKDIR /app
 
 # Copy only necessary files from the builder stage
 COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
-COPY .. .
+COPY ../Application .
 
 EXPOSE 8080
 

@@ -5,7 +5,7 @@ import numpy as np
 from tqdm import tqdm
 import keras
 import cv2
-from Application import annotate_realtime
+import annotate_realtime
 
 # train_labels_raw = pd.read_csv("datasets/CFV-Dataset/train.csv")
 # # train_labels = train_labels.loc[:, ["image_path", "angle"]]

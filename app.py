@@ -8,14 +8,13 @@ import numpy as np
 import time
 from html import unescape
 import re
-from Application.annotate_realtime import detect_objects_and_extract_text, reset
+from annotate_realtime import detect_objects_and_extract_text, reset
 import os
 
-api_key = "AIzaSyAj5is27Ui1bJ5CMSCdGEcus41LIiZ5Zy8"
+api_key = os.environ.get("GOOGLE_MAPS_API_KEY", "AIzaSyAj5is27Ui1bJ5CMSCdGEcus41LIiZ5Zy8")
 latitude, longitude = None, None
 destination_location = None
 last_instruction = ""
-speaker_available = True
 instruction_to_be_said = None
 
 app = Flask(__name__)
@@ -28,70 +27,60 @@ def index():
 
 
 @socketio.on('speaker_available')
-def setSpeakerAvailable():
+def trySpeakingNavInstruction():
     # if there is some instructions to be said, speak the instruction instantly
+    print("speaker available!")
     global instruction_to_be_said
     if instruction_to_be_said is not None:
-        emit("speak", instruction_to_be_said)
+        speak(instruction_to_be_said, True)
         instruction_to_be_said = None
         return
 
-    global speaker_available
-    speaker_available = True
 
-
-def speak(text):
-    global speaker_available
-    if speaker_available:
-        emit("speak", text)
-        speaker_available = False
+def speak(text, important=False):
+    emit("speak", {'text': text, 'important': important})
 
 
 @socketio.on('send_text')
 def receive_text(text):
-    global speaker_available
     # Process the audio data in Python
     # Example: Convert audio data to base64 for simplicity
-    emit('processed_audio', {'result': 'Audio processed successfully', 'text': text})
 
     # condition depending on text
-    if text == "scan" or text == "SC":
-        speak("scan activated")
-        print(f"Availability: {speaker_available}")
-        speaker_available = True
+    text = text.lower()
+    if text == "scan" or text == "sc" or text == "activate scan" or text == "activate scanning" or text == "activate":
+        speak("scan activated", True)
         emit("activate_scan")  # start the scan loop: request -> client response -> process -> request
-    elif text == "quit scan" or text == "quit SC":
-        print(f"Availability: {speaker_available}")
-        speak("scan deactivated")
-        speaker_available = True
+    elif text == "quit scan" or text == "quit sc" or text == "deactivate scan" or text == "quit scanning" or text == "deactivate":
+        speak("scan deactivated", True)
         emit("deactivate_scan")
     elif text[0:11] == "navigate to":
         address = text[11:]
         global destination_location
         destination_location = address
-        speak(f"navigating to {destination_location}")
-        speaker_available = True
+        speak(f"navigating to {destination_location}", True)
         emit("activate_navigation")
-    elif text == "quit navigation":
-        speak("navigation deactivated")
-        speaker_available = True
+    elif text == "quit navigation" or text == "deactivate navigation" or text == "exit navigation":
+        speak("navigation deactivated", True)
+        global last_instruction
+        last_instruction = ""
         emit("deactivate_navigation")
 
 
 # image processing
 @socketio.on("video_frame")
 def process_image(frame):
-    global speaker_available
-    lastTime = time.time()
     decoded_frame = base64.b64decode(frame)
     nparr = np.frombuffer(decoded_frame, np.uint8)
 
     # Decode the image using OpenCV
-    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    textPrompt = detect_objects_and_extract_text(img)
-    if textPrompt is not None:
-        speak(textPrompt)
-    emit("request_scan")
+    try:
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        textPrompt = detect_objects_and_extract_text(img)
+        if textPrompt is not None:
+            speak(textPrompt)
+    finally:
+        emit("request_scan")
 
 
 @socketio.on("scan_activated")
@@ -114,7 +103,6 @@ def update_loc(jsonData):
 def get_prompt(start_lat, start_long, dest_location):
     I, D, S = get_walking_directions(api_key, start_lat, start_long, dest_location)
     # closest_instruction, coords = find_closest_instruction(latitude, longitude, S, I)
-    print(I)
     closest_instruction = I[0]
     closest_dist = D[0]
     global last_instruction
@@ -126,11 +114,8 @@ def get_prompt(start_lat, start_long, dest_location):
     # prompt = f"Next instruction: {closest_instruction}. Distance: {distance_to_instruction} km"
     instruction_text = f"{html_to_plaintext(closest_instruction)}, {closest_dist}."
     global instruction_to_be_said
-    if speaker_available:
-        speak(instruction_text)
-        instruction_to_be_said = None
-    else:
-        instruction_to_be_said = instruction_text
+
+    instruction_to_be_said = instruction_text
 
 
 def get_walking_directions(api_key, origin_lat, origin_lng, dest_location):
@@ -157,9 +142,11 @@ def get_walking_directions(api_key, origin_lat, origin_lng, dest_location):
             start_locations.append(start_location)
         return instructions, distances, start_locations
 
-
     else:
-        print(f"Error: {data['status']}")
+        speak(f"Error: {data['status']}. navigation deactivated", True)
+        global last_instruction
+        last_instruction = ""
+        emit("deactivate_navigation")
 
 
 # geocode the location
@@ -189,6 +176,6 @@ def html_to_plaintext(html_text):
 
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True, host='0.0.0.0', port=os.environ.get('PORT', 5000))
+    socketio.run(app, debug=True, port=int(os.environ.get('PORT', 5000)), host='0.0.0.0')
 
 # 51.4818048 -0.1769472

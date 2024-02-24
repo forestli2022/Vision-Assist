@@ -6,6 +6,7 @@
     <title>Microphone Toggle Example</title>
     <link rel="stylesheet" href="/static/styles.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+     <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
 </head>
 <body>
     <div id="title-container">
@@ -17,21 +18,50 @@
             <img src="/static/microphone.png" height="512" alt="microphone">
         </button>
     </div>
+    <div id="generated-text-container">
+        <h1 id="generated-text"></h1>
+    </div>
 
-     <audio id="audioPlayer" controls style="display: none;"></audio>
+    <audio id="audioPlayer" controls style="display: none;"></audio>
+
 
     <script>
-        // audio recording
+        // audio recognition
         const recognition = new webkitSpeechRecognition(); // Use the Webkit prefix for some browsers
         recognition.continuous = true;
         recognition.lang = 'en-US';
         const audioPlayer = document.getElementById('audioPlayer');
-        var recognizing = false
+        var recognizing = false;
 
-        function playAudioFromPath(path) {
-            audioPlayer.src = path; // Replace with the actual path
-            audioPlayer.load(); // Load the new source
-            audioPlayer.play(); // Start playing the audio
+        preloadAudio("/static/on.wav");
+        preloadAudio("/static/off.wav");
+
+        // loading audio
+        async function preloadAudio(audioPath) {
+            try {
+                const response = await fetch(audioPath);
+                const audioBuffer = await response.arrayBuffer();
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const audioSource = audioContext.createBufferSource();
+                const audioData = await audioContext.decodeAudioData(audioBuffer);
+
+                audioSource.buffer = audioData;
+                audioSource.connect(audioContext.destination);
+
+                return audioSource;
+            } catch (error) {
+                console.error('Error preloading audio:', error);
+                return null;
+            }
+        }
+
+        async function playCachedAudio(audioPath) {
+            const audioSource = await preloadAudio(audioPath);
+
+            if (audioSource) {
+                // Start playing the audio
+                audioSource.start();
+            }
         }
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -48,12 +78,12 @@
                     // Start speech recognition when microphone is toggled on
                     recognition.start();
                     recognizing = true;
-                    playAudioFromPath("/static/on.wav")
+                    playCachedAudio("/static/on.wav");
                 } else {
                     // Stop speech recognition when microphone is toggled off
                     recognition.stop();
                     recognizing = false;
-                    playAudioFromPath("/static/off.wav")
+                    playCachedAudio("/static/off.wav");
                 }
             });
 
@@ -74,27 +104,40 @@
             });
 
             // text to speech
-            socket.on('speak', (textToSpeak) => {
+            socket.on('speak', function(values) {
+                console.log(values)
+                const important = values['important']
+                const text = values['text']
+                if(important) {
+                    window.speechSynthesis.cancel()
+                }
+                speakText(text);
+            });
+
+            // speech synthesis
+            function speakText(textToSpeak) {
+                console.log("speaking")
                 if(window.speechSynthesis.speaking || recognizing) return;
 
                 const utterance = new SpeechSynthesisUtterance(textToSpeak);
-                utterance.rate = 1.25
-                utterance.voice = window.speechSynthesis.getVoices().find(voice => voice.gender === "female");
+                utterance.rate = 1.25;
                 window.speechSynthesis.speak(utterance);
                 utterance.onend = () => {
                     socket.emit('speaker_available')
                     console.log("speaker_available")
                 };
 
-
-            });
+                // change generated text
+                document.getElementById("generated-text").textContent = textToSpeak;
+            }
 
             // scan
             let stream;
             let videoElement;
 
             socket.on('activate_scan', () => {
-                navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false })
+
+                navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment"}, audio: false })
                 .then((newStream) => {
                     stream = newStream;
                     videoElement = document.createElement('video');
@@ -102,6 +145,9 @@
                     videoElement.autoplay = true;
                     videoElement.playsInline = true;
                     videoElement.muted = true;
+                    document.addEventListener('click', () => {
+                        videoElement.play().catch(error => console.error('Error playing video:', error));
+                    });
                     socket.emit("scan_activated")
                 })
                 .catch((error) => {
@@ -120,22 +166,15 @@
             })
 
             function captureFrame() {
-                const track = stream.getVideoTracks()[0];
-                const imageCapture = new ImageCapture(track);
+                const canvas = document.createElement('canvas');
+                canvas.width = videoElement.videoWidth;
+                canvas.height = videoElement.videoHeight;
 
-                imageCapture.grabFrame()
-                    .then(frame => frameToBase64(frame))
-                    .then(frameData => {
-                        if (frameData.trim() !== '') {
-                            socket.emit('video_frame', frameData);
-                        } else {
-                            console.error('Empty frameData.');
-                        }
-                    })
-                    .catch(error => {
-                        socket.emit('speaker_available');
-                        console.error('Error capturing frame:', error);
-                    });
+                const context = canvas.getContext('2d');
+                context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+
+                const frameData = canvas.toDataURL('image/png').split(',')[1];
+                socket.emit("video_frame", frameData)
             }
 
             function stopVideoStream() {

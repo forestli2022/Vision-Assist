@@ -61,7 +61,6 @@ def getFocalLength():
 
 FOCAL_LENGTH = getFocalLength()
 
-
 # ============================================
 
 
@@ -226,19 +225,8 @@ def detect_objects_and_extract_text(frame):
     if FRAME_WIDTH is None:
         FRAME_WIDTH = frame.shape[1]
 
-
     # Perform object detection using YOLO
     tracks, distances, speeds = realTimeAnnotate(frame)
-    # boxes = model(frame)[0].boxes
-
-    # Perform text extraction using Tesseract OCR
-    # gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    # extracted_text = pytesseract.image_to_string(gray)
-    #
-    # # Convert extracted text to audio
-    # threading.Thread(target=say, args=(extracted_text,)).start()
-
-    # Convert the information to text prompt
     # speeding vehicles, traffic light, blind_road, crosswalk, close people, close pole
 
     tempPrompts = {}
@@ -255,25 +243,29 @@ def detect_objects_and_extract_text(frame):
         else:
             directionText = "front"
 
+        print(name, speeds, distances)
 
         match name:
             case 'car':
-                if speeds[tr_id] > 7 and distances[tr_id] < 20:
-                    tempPrompts[tr_id] = Prompt(0, f"speeding car at {directionText}, {distances[tr_id]} meters away.")
+                if tr_id in speeds.keys() and speeds[tr_id] > 7 and distances[tr_id] < 20:
+                    tempPrompts[tr_id] = Prompt(0,
+                                                f"speeding car at {directionText}, {round(distances[tr_id])} meters away.")
             case 'truck':
-                if speeds[tr_id] > 5 and distances[tr_id] < 20:
-                    tempPrompts[tr_id] = Prompt(0, f"speeding truck at {directionText}, {distances[tr_id]} meters away.")
+                if tr_id in speeds.keys() and speeds[tr_id] > 5 and distances[tr_id] < 20:
+                    tempPrompts[tr_id] = Prompt(0,
+                                                f"speeding truck at {directionText}, {round(distances[tr_id])} meters away.")
             case 'bus':
-                if speeds[tr_id] > 5 and distances[tr_id] < 20:
-                    tempPrompts[tr_id] = Prompt(0, f"speeding bus at {directionText}, {distances[tr_id]} meters away.")
+                if tr_id in speeds.keys() and speeds[tr_id] > 5 and distances[tr_id] < 20:
+                    tempPrompts[tr_id] = Prompt(0,
+                                                f"speeding bus at {directionText}, {round(distances[tr_id])} meters away.")
             case 'red_light':
                 tempPrompts[tr_id] = Prompt(1, f"red light at {directionText}.")
             case 'green_light':
-                tempPrompts[tr_id] = Prompt(2, f"green light at {directionText}.")
+                tempPrompts[tr_id] = Prompt(1, f"green light at {directionText}.")
             case 'blind_road':
                 tempPrompts[tr_id] = Prompt(2, f"blind road at {directionText}.")
             case 'crosswalk':
-                tempPrompts[tr_id] = Prompt(3, f"crosswalk at {directionText}.")
+                tempPrompts[tr_id] = Prompt(2, f"crosswalk at {directionText}.")
             case 'person':
                 if distances[tr_id] < 5:
                     tempPrompts[tr_id] = Prompt(4, f"person at {directionText}.")
@@ -285,18 +277,18 @@ def detect_objects_and_extract_text(frame):
     if not tempPrompts:
         return None
 
-    promptId = min(tempPrompts, key=lambda k: tempPrompts[k].priority)
     decayPrompts(time.time() - lastTime)
-    return inputDict(promptId, tempPrompts[promptId])
-
-
-def inputDict(track_id, prompt):
-    # input the prompts into dictionary, output text prompt for this frame (nullable)
-    if track_id in promptDict.keys() and prompt.priority <= promptDict[track_id].priority:
-        return None
-    promptDict[track_id] = prompt
     print(promptDict)
-    return prompt.textPrompt
+    return inputDict(tempPrompts)
+
+
+def inputDict(tempPrompts):
+    # input the prompts into dictionary, output text prompt for this frame (nullable)
+    tempPrompts = dict(sorted(tempPrompts.items(), key=lambda item: item[1].priority))
+    for tr_id in tempPrompts:
+        if tr_id in promptDict.keys(): continue
+        promptDict[tr_id] = tempPrompts[tr_id]
+        return promptDict[tr_id].textPrompt
 
 
 def decayPrompts(timeInterval):
@@ -318,6 +310,7 @@ class Prompt:
 
     def decay(self, timeInterval):
         self.forget -= timeInterval
+
 
 if __name__ == "__main__":
     angle_estimator.predict(np.zeros((1, 128, 128, 3)))
