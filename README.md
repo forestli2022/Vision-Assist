@@ -1,4 +1,4 @@
-#Vision Assist
+# Vision Assist
 
 This is the GitHub repo of Google Solution Challenge 2024 Vision Assist.
 We have deployed the demo on Heroku (https://visionassist-c75d69ed7b0d.herokuapp.com/).
